@@ -1,0 +1,6 @@
+# Virtual environment (full dependency install — never commit it)
+.venv/
+
+# Bytecode caches
+__pycache__/
+*.pyc

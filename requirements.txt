@@ -1,0 +1,6 @@
+# The only third-party dependency (docs/architecture.md §1/§11: stdlib
+# first; Streamlit is the contractually approved only UI framework).
+# Pinned to the version the test suite is validated against — a fresh
+# environment must reproduce the tested behavior, not float to latest.
+# Changing this pin is a dependency review (pip-audit), not an edit.
+streamlit==1.62.0
