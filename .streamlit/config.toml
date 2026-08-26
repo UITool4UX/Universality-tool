@@ -1,0 +1,18 @@
+# Pins the BaseWeb widget theme so number_input / slider / select chrome
+# stops auto-following the visitor's OS dark-mode preference. Without this
+# file, Streamlit's own widget skin (not your CSS) decides those colors —
+# which is why inputs were rendering black regardless of ui/app.py's _CSS.
+#
+# This file only sets Streamlit's native theme variables. It does not
+# touch universality/ and cannot change calculation behavior.
+
+[theme]
+base = "light"
+primaryColor = "#2563EB"          # --brand-600, used for focus rings / active states
+backgroundColor = "#F7F8FA"       # --bg-paper
+secondaryBackgroundColor = "#FFFFFF"  # --bg-card, widget fill color
+textColor = "#111827"             # --ink
+font = "serif"                    # closest built-in match to the Lora/Baskerville stack
+
+[server]
+# unrelated to theming — left as-is if you already set this elsewhere
