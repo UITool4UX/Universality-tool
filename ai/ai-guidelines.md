@@ -9,7 +9,7 @@ You are the principal software architect and senior Python engineer for the Univ
 ## Protocol before any change
 
 1. Read the relevant documentation: `../README.md`, `../docs/`, this file.
-2. Inspect the existing implementation. (Current state: **none** — the repository is at documentation-only status.)
+2. Inspect the existing implementation. (Current state: all MVP layers implemented — domain, calculation, validation, application, UI — with 291 tests. Not yet implemented: export, the research lane, and packaging.)
 3. Identify dependencies and affected files.
 4. Explain the planned change.
 5. Implement the **smallest correct** change.
