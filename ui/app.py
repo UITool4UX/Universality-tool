@@ -230,6 +230,43 @@ span[hidden] { display: none; }
 @media (prefers-contrast: more) {
   .purpose, .caption, [data-testid="stMarkdownContainer"] p, .micro-label, .masthead-tag { color: var(--ink) !important; }
 }
+/* --- Addendum: append inside the existing _CSS string in ui/app.py --- */
+
+/* Forces native browser chrome (scrollbars, some pickers) to light,
+   independent of OS preference — belt-and-braces alongside config.toml. */
+:root { color-scheme: light; }
+
+/* stNumberInput step (+/-) buttons: not covered by the existing
+   [data-testid="stNumberInput"] > div rule, so they were still
+   falling back to BaseWeb's dark button skin. */
+[data-testid="stNumberInput"] button {
+  background: var(--bg-card) !important;
+  border-color: var(--border) !important;
+  color: var(--brand-700) !important;
+}
+[data-testid="stNumberInput"] button:hover {
+  background: var(--bg-blue-wash) !important;
+}
+[data-testid="stNumberInput"] button:disabled {
+  color: var(--ink-disabled) !important;
+}
+
+/* st.slider track + thumb (BaseWeb slider is a separate component tree
+   from the text/number inputs — needs its own selectors). */
+div[data-baseweb="slider"] div[role="slider"] {
+  background: var(--brand-700) !important;
+  border-color: var(--bg-card) !important;
+}
+div[data-baseweb="slider"] > div > div:first-child {
+  background: var(--border) !important;           /* track */
+}
+div[data-baseweb="slider"] > div > div:nth-child(2) {
+  background: var(--brand-600) !important;         /* filled portion */
+}
+
+/* st.selectbox chevron + text color, same reasoning as text/number inputs. */
+div[data-baseweb="select"] * { color: var(--ink) !important; }
+div[data-baseweb="select"] svg { fill: var(--ink-2) !important; }
 """
 
 
