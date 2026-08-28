@@ -1,6 +1,8 @@
 # Design system — Universality Index Tool (UI band)
 
 **Status: design contract — implemented 2026-08-26 (`ui/app.py` + `ui/ui_model.py`); this document remains binding. Flagged deviations are recorded in `UI_ARCHITECTURE.md` §4.1 and `docs/changelog.md` (2026-08-26).**
+
+> **Superseded — visual layer only (2026-08-28).** The page's visual styling and the result components (hero live readout, ring gauge, group pins, diagnostics) are now owned by `ui/design_system.py` (the index-v6 design reference), integrated per the explicit 2026-08-28 task. This document's **structural and behavioral contracts remain binding** (page anatomy, input behavior, validation/error handling, session state, accessibility, security: no CDNs, escaped HTML only). Its **palette / typeface / elevation tokens (its §1–§6 mood-board rules — flat paper, no shadows, no gradients, 4–7px radius, Baskerville/Lora system stacks) are replaced** by the design-system module's tokens and components. See `docs/changelog.md` (2026-08-28).
 Companion documents: `UI_ARCHITECTURE.md` (structure), `UX_FLOW.md` (behavior), `ACCESSIBILITY.md` (a11y).
 Upstream contracts this document must not contradict: `architecture.md` (bands, imports, security), `DOMAIN_MODEL.md`, `validation-and-security.md` (error messages are displayed verbatim), `FORMULA_SPECIFICATION.md` (A6 display rounding), `LIMITATIONS.md`.
 

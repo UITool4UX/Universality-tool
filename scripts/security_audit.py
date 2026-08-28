@@ -29,9 +29,10 @@ Checks:
       domain + calculation; ``services``: domain + calculation +
       validation + diagnostics; ``diagnostics``: none; the package
       ``__init__``: services + domain + calculation + validation;
-      ``ui.app``: ``ui.ui_model`` + ``universality`` (public API only);
-      ``ui.ui_model``: ``universality`` (public API only); ``ui`` /
-      ``scripts/*``: none)
+      ``ui.app``: ``ui.ui_model`` + ``ui.design_system`` +
+      ``universality`` (public API only); ``ui.design_system``: none
+      (presentation-only, stdlib only); ``ui.ui_model``:
+      ``universality`` (public API only); ``ui`` / ``scripts/*``: none)
     - a project module **not listed** in the §6 table may import no
       project module (fail-closed: a new module needs a contract entry —
       file + changelog + approval — before it may import project code)
@@ -115,8 +116,11 @@ PERMITTED_EDGES = {
         }
     ),
     # The UI imports the universality package **public API only** (the
-    # bare package — never a submodule) plus its intra-band model.
-    "ui.app": frozenset({"ui.ui_model", "universality"}),
+    # bare package — never a submodule) plus its intra-band modules.
+    "ui.app": frozenset({"ui.ui_model", "ui.design_system", "universality"}),
+    # Presentation-only design-system layer (CSS + HTML renderers):
+    # stdlib only, no Streamlit import, no project imports.
+    "ui.design_system": frozenset(),
     "ui.ui_model": frozenset({"universality"}),
     "ui": frozenset(),
     # scripts/*: stdlib only, never project code (architecture.md §5).

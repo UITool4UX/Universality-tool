@@ -133,6 +133,36 @@ class TestResultState(unittest.TestCase):
         # Per-parameter table present (rows carry escaped names).
         self.assertIn("Per-parameter details", text)
 
+    def test_known_case_ui_072_fap_092_sap_072_dap_052_gap_040(self) -> None:
+        # Known reference case (2026-08-28 design-system integration), driven
+        # through the REAL calculation engine and the index-v6 components:
+        # scale 50, one parameter (weight 1.0), scores 46/36/26 →
+        # normalized 0.92/0.72/0.52 → group indices 0.92/0.72/0.52,
+        # overall 0.72, group gap 0.40. Nothing is hard-coded in the app.
+        at = launch()
+        at.text_input(key="product").set_value("CampusGo").run()
+        at.text_input(key="p0_name").set_value("Navigation").run()
+        at.number_input(key="scale_max").set_value(50).run()
+        at.number_input(key="p0_fap").set_value(46).run()
+        at.number_input(key="p0_sap").set_value(36).run()
+        at.number_input(key="p0_dap").set_value(26).run()
+        at.button(key="calculate").click().run()
+        self.assertFalse(at.exception)
+        outcome = at.session_state["outcome"]
+        self.assertIsNotNone(outcome)
+        # The engine's real results, through the single A6 location.
+        self.assertEqual(format_for_display(outcome.result.overall), "0.7200")
+        self.assertEqual(format_for_display(outcome.result.group_indices.fap), "0.9200")
+        self.assertEqual(format_for_display(outcome.result.group_indices.sap), "0.7200")
+        self.assertEqual(format_for_display(outcome.result.group_indices.dap), "0.5200")
+        self.assertEqual(format_for_display(outcome.result.group_gap), "0.4000")
+        # And the same values are what the UI actually renders.
+        text = markdown_text(at)
+        for expected in ("0.7200", "0.9200", "0.5200", "0.4000"):
+            self.assertIn(expected, text)
+        self.assertIn("FAP − DAP", text)  # gap sub-label (D-UI-9)
+        self.assertIn("✓ Calculated", text)
+
     def test_result_replaced_on_new_success(self) -> None:
         at = enter_tv7(launch())
         at.button(key="calculate").click().run()
