@@ -2,6 +2,9 @@
 
 Implements the four design contracts (2026-08-26): ``docs/DESIGN_SYSTEM.md``,
 ``docs/UI_ARCHITECTURE.md``, ``docs/UX_FLOW.md``, ``docs/ACCESSIBILITY.md``.
+The visual styling and the index-v6 result components (hero live readout,
+ring gauge, group pins, diagnostics) come from ``ui/design_system.py``
+(2026-08-28, presentation-only — see that module's contract).
 
 **No math in this module** (docs/UI_ARCHITECTURE.md §1): no formulas, no
 tolerances, no sums, no rounding, no clamping, no coercion of user values.
@@ -11,11 +14,18 @@ Results are displayed only through ``universality.format_for_display``
 
 - ``1.0 / n`` — on the explicit "Reset weights to 1/n" action only;
 - ``max``/``min`` over the three already-computed group indices — for the
-  gap card's sub-label only (comparisons, not arithmetic).
+  gap card's sub-label only (comparisons, not arithmetic). The gap
+  diagnostics row reuses exactly that ordering read.
 
-Safety (docs/UI_ARCHITECTURE.md §7): every user string rendered in an HTML
-context is passed through ``html.escape``; ``unsafe_allow_html`` is used
-only for static structure and escaped content; no CDNs, no network calls.
+Safety (docs/UI_ARCHITECTURE.md §7): every static string rendered in an
+HTML context is passed through ``html.escape``; ``unsafe_allow_html`` is
+used only for static structure and escaped content; no CDNs, no network
+calls. **User input (product name, parameter names) never enters an HTML
+context at all** — it renders only via ``st.text`` / ``st.dataframe``
+(framework-escaped / plain), pinned by the hostile-input AppTest — so the
+index-v6 components are fed fixed copy and ``format_for_display`` strings
+only (the design-system renderers escape every string argument as
+defense-in-depth).
 
 Error contract (``docs/validation-and-security.md``, error handling §3):
 the controlled flows are ``ValidationRejection`` (gate) and ``ServiceError``
@@ -23,7 +33,7 @@ the controlled flows are ``ValidationRejection`` (gate) and ``ServiceError``
 other exception that ever escapes the render path (a bug or a corrupted
 session) and shows only the fixed generic error state — never the message,
 class, frames, or source lines (no user-facing stack traces, §9 "Never").
-Streamlit's ``RerunException`` (``st.rerun`` control flow) is re-raised,
+Streamlit's ``RerunException`` (``st.rerun``) is re-raised,
 never treated as a fault.
 
 Run: ``streamlit run ui/app.py`` (binds 0.0.0.0; no host/origin allowlist).
@@ -31,7 +41,6 @@ Run: ``streamlit run ui/app.py`` (binds 0.0.0.0; no host/origin allowlist).
 
 from __future__ import annotations
 
-import base64
 import html
 import re
 import sys
@@ -55,224 +64,25 @@ from universality import (  # noqa: E402  (public API only)
     evaluate,
     format_for_display,
 )
+from ui import design_system  # noqa: E402  (presentation-only, no Streamlit)
 from ui import ui_model  # noqa: E402
 
 _C = ui_model.COPY
-_FONTS_DIR = Path(__file__).resolve().parent / "fonts"
+
+#: Fixed presentation copy for the index-v6 hero banner (the framework
+#: attribution mirrors the footer_a7 method line). The hero never carries
+#: user input: the product name renders only via st.text above it (the
+#: pinned hostile-input contract — user strings never enter an HTML
+#: context).
+_HERO_EYEBROW = "Simplified Singh & Tandon framework"
+_HERO_TITLE = "Your universality index"
 
 
 # ---------------------------------------------------------------------------
-# Static presentation layer (design tokens — DESIGN_SYSTEM.md)
+# Static presentation layer hooks (marker spans for :has() container styling
+# — design_system.py Part C; documented best-effort, degrades to neutral
+# Streamlit styling)
 # ---------------------------------------------------------------------------
-
-def _font_faces() -> str:
-    """@font-face rules for the Lora assets present in ``ui/fonts``
-    (naming convention ``lora-{style}-{weight}.woff2``). With no assets the
-    documented fallback stack applies (DESIGN_SYSTEM.md §3.1, D-UI-1)."""
-    faces: list[str] = []
-    for path in sorted(_FONTS_DIR.glob("lora-*.woff2")):
-        parts = path.stem.split("-")
-        if len(parts) != 3:
-            continue
-        _, style, weight = parts
-        if style not in ("normal", "italic") or not weight.isdigit():
-            continue
-        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-        faces.append(
-            "@font-face{font-family:'Lora';font-style:"
-            f"{style};font-weight:{weight};font-display:swap;"
-            f"src:url(data:font/woff2;base64,{encoded}) format('woff2');}}"
-        )
-    return "\n".join(faces)
-
-
-_CSS = """
-:root{
-  --bg-paper:#F7F8FA; --bg-card:#FFFFFF; --bg-blue-wash:#EAF1FB; --bg-blue-block:#D7E4F7;
-  --brand-600:#2563EB; --brand-700:#1D4ED8; --brand-800:#1E40AF; --brand-900:#172554;
-  --grid-line:rgba(29,78,216,0.06);
-  --ink:#111827; --ink-2:#4B5563; --ink-disabled:#9CA3AF;
-  --err-700:#B91C1C; --err-600:#DC2626; --err-50:#FEF2F2;
-  --ok-700:#15803D;
-  --border:#D8DEE9; --r-sm:4px; --r-md:6px; --r-lg:7px;
-  --serif-display:"Baskerville","Baskerville Old Face","Hoefler Text","Garamond","Libertine","Times New Roman",serif;
-  --serif-body:"Lora","Iowan Old Style","Palatino",serif;
-  --mono:"SFMono-Regular","Consolas","Liberation Mono",monospace;
-}
-html, body, [data-testid="stApp"], #stApp { background: var(--bg-paper); }
-body, .stMarkdown, [data-testid="stMarkdownContainer"] {
-  font-family: var(--serif-body); color: var(--ink);
-}
-/* Content column: paper width, graph-paper grid in the margins only (6%). */
-.main .block-container, section[data-testid="stMainBlockContainer"] {
-  max-width: 880px; margin: auto; padding: 2.5rem 1.5rem 3rem;
-  background:
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
-    var(--bg-paper);
-  background-size: 24px 24px;
-}
-/* Typography scale (DESIGN_SYSTEM.md §3.2). */
-h1 { font-family: var(--serif-display); font-size: 28px; line-height: 34px; font-weight: 600; margin: 0 0 4px 0; }
-h2 { font-family: var(--serif-display); font-size: 21px; line-height: 30px; font-weight: 600;
-     border-bottom: 1px solid var(--border); padding-bottom: 8px; margin: 8px 0 12px 0; }
-h3 { font-family: var(--serif-body); font-size: 17px; line-height: 26px; font-weight: 600; }
-.wordmark { font-family: var(--serif-display); font-size: 28px; line-height: 34px; font-weight: 600; color: var(--ink); }
-.purpose { font-size: 16px; line-height: 26px; color: var(--ink-2); margin-bottom: 8px; }
-.masthead-tag { font-size: 11.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
-.masthead-rule { border: none; border-top: 1px solid var(--border); margin: 10px 0 4px 0; }
-.caption, [data-testid="stMarkdownContainer"] p.caption { color: var(--ink-2); }
-/* Inputs: default / focus / disabled states (DESIGN_SYSTEM.md §6.2). */
-[data-testid="stTextInput"] > div, [data-testid="stNumberInput"] > div,
-div[data-baseweb="select"] > div {
-  border-radius: var(--r-sm) !important; border-color: var(--border) !important;
-  background: var(--bg-card) !important;
-}
-[data-testid="stTextInput"] input, [data-testid="stNumberInput"] input {
-  font-family: var(--serif-body) !important; font-size: 16px !important; color: var(--ink) !important;
-}
-[data-testid="stTextInput"] > div:focus-within, [data-testid="stNumberInput"] > div:focus-within,
-[data-testid="stTextInput"] input:focus, [data-testid="stNumberInput"] input:focus {
-  border-color: var(--brand-600) !important;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18) !important;
-}
-[data-testid="stTextInput"] input:disabled, [data-testid="stNumberInput"] input:disabled {
-  background: #F3F4F6 !important; color: var(--ink-disabled) !important;
-}
-/* Buttons: baseline inventory of five (DESIGN_SYSTEM.md §6.1).
-   Default kind renders as Secondary; Primary via [kind="primary"];
-   Tertiary/Dashed via marker spans + :has (best-effort, documented
-   fragility — UI_ARCHITECTURE.md §2). */
-[data-testid="stButton"] button {
-  border-radius: var(--r-sm) !important; font-family: var(--serif-body) !important;
-  font-weight: 500 !important; border: 1px solid var(--brand-700) !important;
-  background: var(--bg-card) !important; color: var(--brand-700) !important;
-  box-shadow: none !important; transition: background 120ms ease;
-}
-[data-testid="stButton"] button:hover { background: #EFF4FC !important; }
-[data-testid="stButton"] button[kind="primary"] {
-  background: var(--brand-700) !important; color: #fff !important;
-  border-color: var(--brand-700) !important; min-width: 180px;
-}
-[data-testid="stButton"] button[kind="primary"]:hover { background: var(--brand-800) !important; }
-[data-testid="stButton"] button:disabled {
-  background: #E5E7EB !important; color: var(--ink-disabled) !important;
-  border-color: transparent !important; cursor: not-allowed;
-}
-div[data-testid="stMarkdown"]:has(span.btn-tertiary) + div[data-testid="stButton"] button {
-  border-color: transparent !important; background: transparent !important; color: var(--ink-2) !important;
-}
-div[data-testid="stMarkdown"]:has(span.btn-tertiary) + div[data-testid="stButton"] button:hover {
-  color: var(--brand-700) !important; background: transparent !important;
-}
-div[data-testid="stMarkdown"]:has(span.btn-tertiary-dashed) + div[data-testid="stButton"] button {
-  border: 1px dashed #C6CFDD !important; background: transparent !important;
-  color: var(--ink-2) !important; width: 100%;
-}
-/* Cards, panels, color blocking (DESIGN_SYSTEM.md §5). */
-[data-testid="stVerticalBlock"]:has(> div[data-testid="stMarkdown"] span.part-card) {
-  border: 1px solid var(--border); border-radius: var(--r-md);
-  background: var(--bg-card); padding: 20px; margin-bottom: 28px;
-}
-[data-testid="stVerticalBlock"]:has(> div[data-testid="stMarkdown"] span.param-card) {
-  border: 1px solid var(--border); border-radius: var(--r-md);
-  background: var(--bg-card); padding: 16px; margin-bottom: 12px;
-}
-.card-title { font-size: 15px; font-weight: 600; color: var(--ink); }
-[data-testid="stVerticalBlock"]:has(> div[data-testid="stMarkdown"] span.part-results-success) {
-  border-radius: var(--r-lg); background: var(--bg-blue-wash);
-  border-top: 2px solid var(--brand-700); padding: 20px; margin-bottom: 28px;
-}
-[data-testid="stVerticalBlock"]:has(> div[data-testid="stMarkdown"] span.part-results-stale) {
-  border-radius: var(--r-lg); background: var(--bg-blue-wash);
-  padding: 20px; margin-bottom: 28px; opacity: 0.6;
-}
-.placeholder-box {
-  border: 1px dashed #C6CFDD; border-radius: var(--r-md); background: var(--bg-card);
-  padding: 36px; text-align: center; color: var(--ink-2); font-style: italic; font-size: 14px;
-}
-/* Error & success elements (escaped HTML, DESIGN_SYSTEM.md §6.2/§6.3). */
-.error-summary, .field-error {
-  background: var(--err-50); border-left: 3px solid var(--err-600);
-  border-radius: var(--r-md); padding: 12px 16px; margin: 8px 0;
-  color: var(--err-700); font-size: 14px; line-height: 22px;
-}
-.error-summary { font-size: 15px; }
-.error-summary .summary-where { color: var(--ink-2); margin-top: 4px; }
-.field-error .fix-hint { color: var(--ink-2); }
-.ok-caption { color: var(--ok-700); font-weight: 600; font-size: 14px; }
-/* Results figures (Baskerville display numerals). */
-.stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-md); padding: 16px; }
-.hero-figure { font-family: var(--serif-display); font-size: 48px; line-height: 56px; color: var(--ink); margin: 4px 0; }
-.stat-figure { font-family: var(--serif-display); font-size: 26px; line-height: 34px; color: var(--ink); margin-top: 4px; }
-.group-card { background: var(--bg-blue-block); border-radius: var(--r-md); padding: 16px; }
-.micro-label { font-size: 11.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
-/* Dataframe (parameter table). */
-[data-testid="stDataFrame"] { border: 1px solid var(--border); border-radius: var(--r-md); }
-[data-testid="stDataFrame"] th { background: var(--bg-blue-wash); font-family: var(--serif-body); }
-/* Loading line, skip link, footer. */
-.progress-line { height: 2px; width: 40%; background: var(--brand-700); opacity: 0.6; margin: 4px 0; }
-.skip-link { position: absolute; left: -9999px; top: 0; z-index: 100; }
-.skip-link:focus {
-  left: 8px; top: 8px; background: var(--bg-card); color: var(--brand-700);
-  padding: 10px 14px; border-radius: var(--r-sm); border: 1px solid var(--brand-600);
-  font-family: var(--serif-body); font-size: 14px;
-}
-.footer-rule { border: none; border-top: 1px solid var(--border); margin-top: 32px; }
-span[hidden] { display: none; }
-@media (max-width: 720px) {
-  .hero-figure { font-size: 44px; line-height: 52px; }
-  h1, .wordmark { font-size: 24px; line-height: 30px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; scroll-behavior: auto !important; animation: none !important; }
-}
-@media (prefers-contrast: more) {
-  .purpose, .caption, [data-testid="stMarkdownContainer"] p, .micro-label, .masthead-tag { color: var(--ink) !important; }
-}
-/* --- Addendum: append inside the existing _CSS string in ui/app.py --- */
-
-/* Forces native browser chrome (scrollbars, some pickers) to light,
-   independent of OS preference — belt-and-braces alongside config.toml. */
-:root { color-scheme: light; }
-
-/* stNumberInput step (+/-) buttons: not covered by the existing
-   [data-testid="stNumberInput"] > div rule, so they were still
-   falling back to BaseWeb's dark button skin. */
-[data-testid="stNumberInput"] button {
-  background: var(--bg-card) !important;
-  border-color: var(--border) !important;
-  color: var(--brand-700) !important;
-}
-[data-testid="stNumberInput"] button:hover {
-  background: var(--bg-blue-wash) !important;
-}
-[data-testid="stNumberInput"] button:disabled {
-  color: var(--ink-disabled) !important;
-}
-
-/* st.slider track + thumb (BaseWeb slider is a separate component tree
-   from the text/number inputs — needs its own selectors). */
-div[data-baseweb="slider"] div[role="slider"] {
-  background: var(--brand-700) !important;
-  border-color: var(--bg-card) !important;
-}
-div[data-baseweb="slider"] > div > div:first-child {
-  background: var(--border) !important;           /* track */
-}
-div[data-baseweb="slider"] > div > div:nth-child(2) {
-  background: var(--brand-600) !important;         /* filled portion */
-}
-
-/* st.selectbox chevron + text color, same reasoning as text/number inputs. */
-div[data-baseweb="select"] * { color: var(--ink) !important; }
-div[data-baseweb="select"] svg { fill: var(--ink-2) !important; }
-"""
-
-
-def _style_block() -> str:
-    return "<style>" + _font_faces() + _CSS + "</style>"
-
 
 def _marker(css_class: str) -> None:
     """A hidden marker span: the :has() hook for container/button styling
@@ -557,6 +367,12 @@ def _run_calculation() -> None:
 
 
 def _render_results(outcome) -> None:
+    """Part III body: the index-v6 components, wired to THIS outcome.
+
+    Every displayed number is ``format_for_display`` (single A6 location);
+    the components receive display-ready strings (plus the raw 0–1 index
+    for the ring-gauge arc geometry only). The gap's max/min sub-label is
+    the D-UI-9 ordering read (comparisons, no arithmetic)."""
     evaluation, result = outcome.evaluation, outcome.result
     st.text(evaluation.product)  # plain text — never markdown (escape rule)
     st.caption(
@@ -565,38 +381,80 @@ def _render_results(outcome) -> None:
     )
     if st.session_state.get("_calc_status") == "done":
         st.markdown(f'<span class="ok-caption">{html.escape(_C["calculated"])}</span>', unsafe_allow_html=True)
-    overall_col, fap_col, sap_col, dap_col, gap_col = st.columns([3, 1.2, 1.2, 1.2, 1.2])
-    with overall_col:
-        st.markdown(
-            f'<div class="stat-card"><div class="micro-label">{html.escape(_C["overall_label"])}</div>'
-            f'<div class="hero-figure">{html.escape(format_for_display(result.overall))}</div>'
-            f'<div class="caption">{html.escape(_C["overall_caption"])}</div></div>',
-            unsafe_allow_html=True,
-        )
+
+    overall_display = format_for_display(result.overall)
     group_values = (
         ("fap", result.group_indices.fap),
         ("sap", result.group_indices.sap),
         ("dap", result.group_indices.dap),
     )
-    for (group, value), col in zip(group_values, (fap_col, sap_col, dap_col)):
-        with col:
-            st.markdown(
-                f'<div class="group-card"><div class="micro-label">'
-                f"{html.escape(ui_model.GROUP_SHORT[group])} · {html.escape(ui_model.GROUP_LABELS[group])}</div>"
-                f'<div class="stat-figure">{html.escape(format_for_display(value))}</div></div>',
-                unsafe_allow_html=True,
-            )
-    # Gap card (F4 output + max/min sub-label — D-UI-9, comparisons only).
+    gap_display = format_for_display(result.group_gap)
+    # Gap ordering read (D-UI-9 — comparisons over already-computed values).
     max_group = max(group_values, key=lambda item: item[1])[0]
     min_group = min(group_values, key=lambda item: item[1])[0]
-    with gap_col:
+    gap_shorts = f"{ui_model.GROUP_SHORT[max_group]} − {ui_model.GROUP_SHORT[min_group]}"
+
+    # Live readout banner: overall figure + the three group indices + the
+    # user-group gap, all from this outcome. The banner carries no user
+    # input — the product name is the plain st.text line above (pinned
+    # hostile-input contract).
+    mini_rows = [
+        (
+            f"{ui_model.GROUP_SHORT[group]} · {ui_model.GROUP_LABELS[group]}",
+            format_for_display(value),
+            design_system.tier_pill_class(value),
+        )
+        for group, value in group_values
+    ]
+    mini_rows.append(("User-group gap", gap_display, "pill--neutral"))
+    overall_tier = design_system.score_to_tier(result.overall)
+    st.markdown(
+        design_system.render_hero(
+            eyebrow=_HERO_EYEBROW,
+            title=_HERO_TITLE,
+            lede=(
+                f"Scale 1–{evaluation.scale_max} · {len(evaluation.parameters)} parameters · "
+                f"Simple Mode group weights {format_for_display(SIMPLE_MODE_GROUP_WEIGHTS[0])} each"
+            ),
+            figure=overall_display,
+            figure_caption=f"{design_system.tier_label(overall_tier)}.",
+            mini_rows=mini_rows,
+        ),
+        unsafe_allow_html=True,
+    )
+
+    overall_col, gap_col = st.columns([3, 2], vertical_alignment="center")
+    with overall_col:
         st.markdown(
-            f'<div class="group-card"><div class="micro-label">{html.escape(_C["gap_label"])}</div>'
-            f'<div class="stat-figure">{html.escape(format_for_display(result.group_gap))}</div>'
-            f'<div class="caption">{html.escape(ui_model.GROUP_SHORT[max_group])} − '
-            f'{html.escape(ui_model.GROUP_SHORT[min_group])}</div></div>',
+            f'<div class="micro-label" style="text-align:center">{html.escape(_C["overall_label"])}</div>',
             unsafe_allow_html=True,
         )
+        st.markdown(
+            design_system.render_ring_gauge(
+                figure=overall_display,
+                tier=overall_tier,
+                caption=_C["overall_caption"],
+                arc_fraction=result.overall,
+            ),
+            unsafe_allow_html=True,
+        )
+    # Gap card (F4 output + max/min sub-label — D-UI-9, comparisons only).
+    with gap_col:
+        st.markdown(
+            f'<div class="group-card" style="text-align:center">'
+            f'<div class="micro-label">{html.escape(_C["gap_label"])}</div>'
+            f'<div class="stat-figure">{html.escape(gap_display)}</div>'
+            f'<div class="caption">{html.escape(gap_shorts)}</div></div>',
+            unsafe_allow_html=True,
+        )
+    st.markdown(
+        design_system.render_group_pins(
+            format_for_display(result.group_indices.fap),
+            format_for_display(result.group_indices.sap),
+            format_for_display(result.group_indices.dap),
+        ),
+        unsafe_allow_html=True,
+    )
     st.markdown(f"<h3>{html.escape(_C['per_param_title'])}</h3>", unsafe_allow_html=True)
     st.caption(_C["table_caption"])
     rows = []
@@ -626,6 +484,19 @@ def _render_results(outcome) -> None:
             )
         st.dataframe(contribution_rows, width="stretch", hide_index=True)
     st.caption(_C["a6_note"])
+    # Diagnostics: the widest user-group gap, from this outcome only
+    # (D-UI-9 ordering read + the F4 gap value; no new computation).
+    st.markdown(
+        design_system.render_diagnostics(
+            [
+                (
+                    "Widest user-group gap",
+                    f"{ui_model.GROUP_SHORT[max_group]}–{ui_model.GROUP_SHORT[min_group]} · {gap_display}",
+                )
+            ]
+        ),
+        unsafe_allow_html=True,
+    )
 
 
 def render_part3() -> None:
@@ -690,7 +561,7 @@ def main() -> None:
         layout="centered",
         initial_sidebar_state="collapsed",
     )
-    st.markdown(_style_block(), unsafe_allow_html=True)
+    st.markdown(design_system.inject_css(), unsafe_allow_html=True)
     if "param_count" not in st.session_state:
         st.session_state.update(ui_model.fresh_state())
     # Two-click Reset: auto-disarm after 5 seconds (presentation timing only).
